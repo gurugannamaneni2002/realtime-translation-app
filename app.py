@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify, send_file, make_response
 from flask_cors import CORS
 from langdetect import detect
 import speech_recognition as sr
@@ -9,7 +9,9 @@ import uuid
 import tempfile
 
 app = Flask(__name__)
-CORS(app)
+
+# Configure CORS to explicitly allow requests from your frontend
+CORS(app, supports_credentials=True)
 
 # Initialize Google Translator
 recognizer = sr.Recognizer()
@@ -71,7 +73,6 @@ def text_to_speech():
 def get_supported_languages():
     try:
         # Return all languages supported by googletrans
-        # Convert LANGUAGES to a regular dict for JSON serialization
         languages_dict = {k: v for k, v in LANGUAGES.items()}
         return jsonify({
             'languages': languages_dict,
@@ -84,8 +85,11 @@ def get_supported_languages():
             'status': 'error'
         }), 500
 
-@app.route('/detect_language', methods=['POST'])
+@app.route('/detect_language', methods=['POST', 'OPTIONS'])
 def detect_language():
+    if request.method == 'OPTIONS':
+        return build_cors_preflight_response()
+
     data = request.json
     if not data:
         return jsonify({'error': 'No JSON data provided'}), 400
@@ -109,8 +113,11 @@ def detect_language():
         print(f"Error in detect_language: {e}")
         return jsonify({'error': str(e)}), 400
 
-@app.route('/translate', methods=['POST'])
+@app.route('/translate', methods=['POST', 'OPTIONS'])
 def translate_text():
+    if request.method == 'OPTIONS':
+        return build_cors_preflight_response()
+
     if translator is None:
         return jsonify({'error': 'Translator service not available'}), 503
     
@@ -152,6 +159,21 @@ def health_check():
         'message': 'Translation service is running',
         'translator_available': translator is not None
     })
+
+# Handle CORS for OPTIONS preflight requests
+def build_cors_preflight_response():
+    response = make_response()
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+    return response
+
+@app.after_request
+def after_request(response):
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+    return response
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8080))
